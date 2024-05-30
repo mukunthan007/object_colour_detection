@@ -1,0 +1,177 @@
+#include "common.h"
+#include <opencv2/opencv.hpp>
+#include "native_opencv.h"
+#include <vector>
+#include <cstdint> // Include the C++ header for fixed-width integers
+
+using namespace cv;
+using namespace std;
+
+extern "C"
+{
+    FUNCTION_ATTRIBUTE
+    const char *opencvVersion()
+    {
+        return CV_VERSION;
+    }
+
+    FUNCTION_ATTRIBUTE
+    double calculate_length(const vector<Point> &rectangle)
+    {
+        // Calculate Euclidean distance between two opposite corners of the rectangle
+        double length = norm(rectangle[0] - rectangle[2]);
+        return length;
+    }
+
+    FUNCTION_ATTRIBUTE
+    const uint8_t *opencvProcessStream(char *bytes, int width, int height)
+    {
+        long long start = get_now();
+
+        //    int rotation = 0;
+        Mat src = Mat(height, width, CV_8UC3, bytes);
+        // Mat img(height, width, CV_8UC3, Scalar(100, 250, 30));
+        //  vector<unsigned char> buffer(bytes, bytes + width * height * 3); // Assuming 3 channels for RGB
+        //  Mat image = imdecode(buffer, IMREAD_COLOR);
+        Mat hsv_image;
+        cvtColor(src, hsv_image, COLOR_BGR2HSV);
+
+        vector<string> color_list = {"light_green", "dark_green", "pink", "yellow"};
+
+        for (const string &color : color_list)
+        {
+            Scalar lower = Scalar(60, 50, 50);
+            Scalar upper = Scalar(90, 255, 255);
+
+            if (color == "dark_green")
+            {
+                lower = Scalar(25, 50, 50);
+                upper = Scalar(70, 255, 255);
+            }
+            else if (color == "pink")
+            {
+                lower = Scalar(140, 50, 50);
+                upper = Scalar(180, 255, 255);
+            }
+            else if (color == "yellow")
+            {
+                lower = Scalar(20, 50, 50);
+                upper = Scalar(35, 255, 255);
+            }
+
+            Mat mask;
+            inRange(hsv_image, lower, upper, mask);
+            Mat kernel = getStructuringElement(MORPH_RECT, Size(5, 5));
+            morphologyEx(mask, mask, MORPH_OPEN, kernel);
+            morphologyEx(mask, mask, MORPH_CLOSE, kernel);
+
+            vector<vector<Point>> contours;
+            findContours(mask, contours, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+            vector<vector<Point>> green_rectangles;
+            for (const vector<Point> &contour : contours)
+            {
+                double perimeter = arcLength(contour, true);
+                vector<Point> approx;
+                approxPolyDP(contour, approx, 0.04 * perimeter, true);
+                if (approx.size() == 4 && calculate_length(approx) > 50)
+                {
+                    green_rectangles.push_back(approx);
+                }
+            }
+
+            for (const vector<Point> &rectangle : green_rectangles)
+            {
+                double length = calculate_length(rectangle);
+                cout << "Length: " << length << endl;
+            }
+
+            for (const vector<Point> &rectangle : green_rectangles)
+            {
+                vector<vector<Point>> rect_contour(1, rectangle);
+                drawContours(src, rect_contour, -1, Scalar(0, 255, 0), 2);
+            }
+        }
+        Mat dst = src;
+
+        // handle rotation
+        //        if (rotation == 90)
+        //        {
+        //    transpose(src, dst);
+        //    flip(dst, dst, 1);
+        //        }
+        //        else if (rotation == 180)
+        //        {
+        //            flip(src, dst, -1);
+        //        }
+        //        else if (rotation == 270)
+        //        {
+        //            transpose(src, dst);
+        //            flip(dst, dst, 0);
+        //        }
+
+        // Bitwise not the image
+        // bitwise_not(src, dst);
+        // bitwise_not(dst, dst);
+
+        // return the image as a pointer to the data
+        long length = dst.total() * dst.elemSize();
+        uint8_t *result = new uint8_t[length];
+        // uchar *result = img.data;
+        memcpy(result, dst.data, length);
+
+        delete[] bytes;
+
+        int evalInMillis = static_cast<int>(get_now() - start);
+        platform_log("Decode done in %dms\n", evalInMillis);
+        return result;
+    }
+
+    FUNCTION_ATTRIBUTE
+    void opencvProcessImage(char *input, char *output)
+    {
+        long long start = get_now();
+
+        Mat src = imread(input, IMREAD_COLOR);
+        Mat dst;
+
+        Mat img = src;
+
+        Mat gray;
+        cvtColor(img, gray, COLOR_BGR2GRAY);
+        Mat mask;
+        threshold(gray, mask, 0, 255, THRESH_BINARY_INV + THRESH_OTSU);
+        Mat white(img.rows, img.cols, CV_8UC3, Scalar(255, 255, 255));
+        Mat result;
+        white.copyTo(result, mask);
+
+        bitwise_not(result, dst);
+
+        Scalar lower(10, 10, 10);
+        Scalar upper(256, 256, 256);
+
+        Mat thresh;
+        inRange(img, lower, upper, thresh);
+
+        // apply morphology and make 3 channels as mask
+        Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(5, 5));
+        Mat mask1;
+        morphologyEx(thresh, mask1, MORPH_CLOSE, kernel);
+        morphologyEx(mask1, mask1, MORPH_OPEN, kernel);
+        Mat mask3;
+        merge(std::vector<Mat>{mask1, mask1, mask1}, mask3);
+
+        // blend img with gray using mask
+        Mat result2;
+        bitwise_and(img, mask3, result2);
+        addWeighted(result2, 1, dst, 0.5, 0, result2);
+
+        dst = result2;
+
+        // write the image to a file
+        imwrite(output, dst);
+
+        int evalInMillis = static_cast<int>(get_now() - start);
+        platform_log("Decode done in %dms\n", evalInMillis);
+    }
+}

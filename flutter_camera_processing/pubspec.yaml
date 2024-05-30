@@ -1,0 +1,48 @@
+name: flutter_camera_processing
+description: A new Flutter project.
+version: 0.0.1+1
+# homepage:
+environment:
+  sdk: ">=3.0.1 <4.0.0"
+  flutter: ">=3.7.0"
+
+dependencies:
+  google_mlkit_text_recognition: ^0.10.0
+  camera: ^0.10.5
+  ffi: ^2.0.2
+  flutter:
+    sdk: flutter
+  image: ^4.0.0
+  image_picker: ^0.8.7
+  share_plus: ^7.0.1
+  
+dev_dependencies:
+  ffigen: ^8.0.2 # dart run ffigen
+  flutter_lints: ^2.0.1
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.markosyan.flutter_camera_processing
+        pluginClass: FlutterCameraProcessingPlugin
+      ios:
+        pluginClass: FlutterCameraProcessingPlugin
+
+ffigen:
+  name: GeneratedBindings
+  description: Bindings to opencv and zxing.
+  output: "lib/generated_bindings.dart"
+  headers:
+    entry-points:
+      - "ios/Classes/src/native_opencv.h"
+      - "ios/Classes/src/native_zxing.h"
+  # functions:
+  #   include:
+  #     - 'opencvVersion'
+  #     - 'opencvProcessStream'
+  #     - 'zxingVersion'
+  #     - 'zxingRead'
+  #     - 'zxingEncode'
